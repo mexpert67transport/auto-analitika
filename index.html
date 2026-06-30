@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>АвтоАналитика — Анализ счетов на ремонт</title>
+  <meta name="description" content="Система анализа счетов на ремонт грузовых автомобилей. Сравнение цен запчастей и работ с рыночными ценами, проверка задвоений, анализ нормо-часов.">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0a0e1a">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230a0e1a' rx='20'/%3E%3Ctext x='50' y='65' font-size='50' text-anchor='middle' dominant-baseline='middle'%3E🚛%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    window.onerror = function(msg, url, line, col, err) {
+      alert("КРИТИЧЕСКАЯ ОШИБКА В КОДЕ:\n" + msg + "\nСтрока: " + line + "\nКолонка: " + col);
+    };
+  </script>
+</head>
+<body>
+  <div class="app-wrapper">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon">🚛</div>
+        <div class="logo-text">
+          <span class="logo-title">АвтоАналитика</span>
+          <span class="logo-sub">Анализ счетов</span>
+        </div>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item active" data-page="dashboard">
+          <span class="nav-icon">📊</span>
+          <span>Дашборд</span>
+        </a>
+        <a href="#" class="nav-item" data-page="invoices">
+          <span class="nav-icon">📄</span>
+          <span>Счета</span>
+          <span class="nav-badge" id="invoiceBadge">0</span>
+        </a>
+        <a href="#" class="nav-item" data-page="comparison">
+          <span class="nav-icon">⚖️</span>
+          <span>Сравнение цен</span>
+        </a>
+        <a href="#" class="nav-item" data-page="parts">
+          <span class="nav-icon">🔧</span>
+          <span>Запчасти</span>
+        </a>
+        <a href="#" class="nav-item" data-page="works">
+          <span class="nav-icon">⚙️</span>
+          <span>Работы</span>
+        </a>
+        <a href="#" class="nav-item" data-page="duplicates">
+          <span class="nav-icon">⚠️</span>
+          <span>Задвоения</span>
+          <span class="nav-badge danger" id="dupBadge">0</span>
+        </a>
+        <a href="#" class="nav-item" data-page="upload">
+          <span class="nav-icon">📁</span>
+          <span>Загрузить счёт</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-stats">
+          <div class="stat-mini">
+            <span class="stat-mini-label">Счетов</span>
+            <span class="stat-mini-value" id="totalInvoicesStat">0</span>
+          </div>
+          <div class="stat-mini">
+            <span class="stat-mini-label">Переплата</span>
+            <span class="stat-mini-value danger" id="totalOverpaysStat">0%</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main-content">
+      <!-- Header -->
+      <header class="top-header">
+        <button class="menu-toggle" id="menuToggle">☰</button>
+        <div class="header-title" id="pageTitle">Дашборд</div>
+        <div class="header-actions">
+          <button class="btn-primary" onclick="navigateTo('upload')">
+            <span>+</span> Добавить счёт
+          </button>
+        </div>
+      </header>
+
+      <!-- Pages -->
+      <div class="page-container">
+        
+        <!-- DASHBOARD PAGE -->
+        <div class="page active" id="page-dashboard">
+          <div class="page-hero">
+            <h1>Обзор ремонтов</h1>
+            <p>Аналитика по всем счетам на ремонт автотехники</p>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon">💰</div>
+              <div class="stat-info">
+                <div class="stat-value" id="statTotalSum">—</div>
+                <div class="stat-label">Сумма всех счетов</div>
+              </div>
+              <div class="stat-trend up" id="statTotalTrend"></div>
+            </div>
+            <div class="stat-card warning">
+              <div class="stat-icon">📈</div>
+              <div class="stat-info">
+                <div class="stat-value" id="statOverpay">—</div>
+                <div class="stat-label">Переплата к рынку</div>
+              </div>
+            </div>
+            <div class="stat-card danger">
+              <div class="stat-icon">⚠️</div>
+              <div class="stat-info">
+                <div class="stat-value" id="statDuplicates">—</div>
+                <div class="stat-label">Задвоений работ</div>
+              </div>
+            </div>
+            <div class="stat-card success">
+              <div class="stat-icon">🚛</div>
+              <div class="stat-info">
+                <div class="stat-value" id="statVehicles">—</div>
+                <div class="stat-label">Автомобилей</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <div class="card">
+              <div class="card-header">
+                <h3>Расходы по сервисам</h3>
+              </div>
+              <div class="card-body">
+                <canvas id="chartServices" height="220"></canvas>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <h3>Динамика расходов</h3>
+              </div>
+              <div class="card-body">
+                <canvas id="chartTimeline" height="220"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <div class="card">
+              <div class="card-header">
+                <h3>Топ дорогих запчастей</h3>
+              </div>
+              <div class="card-body" id="topPartsList"></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <h3>Последние счета</h3>
+              </div>
+              <div class="card-body" id="recentInvoicesList"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- INVOICES PAGE -->
+        <div class="page" id="page-invoices">
+          <div class="page-hero">
+            <h1>Счета на ремонт</h1>
+            <p>Все загруженные счета с детализацией</p>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="filter-bar">
+                <input type="text" class="search-input" id="invoiceSearch" placeholder="Поиск по сервису, авто, дате...">
+                <select class="filter-select" id="invoiceServiceFilter">
+                  <option value="">Все сервисы</option>
+                </select>
+                <select class="filter-select" id="invoiceVehicleFilter">
+                  <option value="">Все автомобили</option>
+                </select>
+              </div>
+            </div>
+            <div class="card-body">
+              <table class="data-table" id="invoicesTable">
+                <thead>
+                  <tr>
+                    <th>№ Счёта</th>
+                    <th>Дата</th>
+                    <th>Сервис</th>
+                    <th>Автомобиль</th>
+                    <th>Запчасти</th>
+                    <th>Работы</th>
+                    <th>Итого</th>
+                    <th>Переплата</th>
+                    <th>Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="invoicesBody">
+                  <tr class="empty-row"><td colspan="9">Счета не загружены. <a href="#" onclick="navigateTo('upload')">Загрузить счёт →</a></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- COMPARISON PAGE -->
+        <div class="page" id="page-comparison">
+          <div class="page-hero">
+            <h1>Сравнение с рыночными ценами</h1>
+            <p>Все позиции счетов против рыночных цен</p>
+          </div>
+          
+          <div class="filter-tabs" id="compFilterTabs">
+            <button class="filter-tab active" data-filter="all">Все позиции</button>
+            <button class="filter-tab" data-filter="parts">Только запчасти</button>
+            <button class="filter-tab" data-filter="works">Только работы</button>
+            <button class="filter-tab" data-filter="overpay">Переплата >20%</button>
+          </div>
+
+          <div class="card">
+            <div class="card-body">
+              <table class="data-table comparison-table" id="comparisonTable">
+                <thead>
+                  <tr>
+                    <th>Тип</th>
+                    <th>Наименование</th>
+                    <th>Артикул</th>
+                    <th>Сервис</th>
+                    <th>Кол-во</th>
+                    <th>Цена сервиса</th>
+                    <th>Рыночная цена</th>
+                    <th>Разница</th>
+                    <th>Норм-часы</th>
+                    <th>Статус</th>
+                  </tr>
+                </thead>
+                <tbody id="comparisonBody">
+                  <tr class="empty-row"><td colspan="10">Загрузите счета для анализа</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- PARTS PAGE -->
+        <div class="page" id="page-parts">
+          <div class="page-hero">
+            <h1>Справочник запчастей</h1>
+            <p>Все запчасти из счетов с артикулами и ценами</p>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <input type="text" class="search-input" id="partsSearch" placeholder="Поиск по названию или артикулу...">
+            </div>
+            <div class="card-body">
+              <table class="data-table" id="partsTable">
+                <thead>
+                  <tr>
+                    <th>Артикул</th>
+                    <th>Наименование</th>
+                    <th>Производитель</th>
+                    <th>Кол-во закупок</th>
+                    <th>Мин. цена</th>
+                    <th>Макс. цена</th>
+                    <th>Рын. цена</th>
+                    <th>Переплата</th>
+                  </tr>
+                </thead>
+                <tbody id="partsBody">
+                  <tr class="empty-row"><td colspan="8">Нет данных</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- WORKS PAGE -->
+        <div class="page" id="page-works">
+          <div class="page-hero">
+            <h1>Справочник работ</h1>
+            <p>Все виды работ из счетов с нормо-часами</p>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <input type="text" class="search-input" id="worksSearch" placeholder="Поиск по виду работ...">
+            </div>
+            <div class="card-body">
+              <table class="data-table" id="worksTable">
+                <thead>
+                  <tr>
+                    <th>Наименование работы</th>
+                    <th>Сервисы</th>
+                    <th>Кол-во в счетах</th>
+                    <th>Цена (мин—макс)</th>
+                    <th>Норм-ч (факт)</th>
+                    <th>Норм-ч (норматив)</th>
+                    <th>Стоимость н/ч</th>
+                    <th>Итого</th>
+                  </tr>
+                </thead>
+                <tbody id="worksBody">
+                  <tr class="empty-row"><td colspan="8">Нет данных</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- DUPLICATES PAGE -->
+        <div class="page" id="page-duplicates">
+          <div class="page-hero">
+            <h1>Задвоение работ</h1>
+            <p>Одинаковые или похожие работы в одном счёте</p>
+          </div>
+          <div id="duplicatesContent">
+            <div class="empty-state">
+              <div class="empty-icon">✅</div>
+              <h3>Задвоений не обнаружено</h3>
+              <p>После загрузки счетов здесь появятся предупреждения о дублирующихся работах</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- UPLOAD PAGE -->
+        <div class="page" id="page-upload">
+          <div class="page-hero">
+            <h1>Загрузить счёт</h1>
+            <p>Добавьте новый счёт на ремонт для анализа</p>
+          </div>
+
+          <div class="upload-grid">
+            <!-- PDF Upload -->
+            <div class="card upload-card">
+              <div class="card-header">
+                <h3>📄 Загрузить PDF</h3>
+              </div>
+              <div class="card-body">
+                <div class="drop-zone" id="dropZone">
+                  <div class="drop-icon">📁</div>
+                  <div class="drop-text">Перетащите PDF-счёт сюда</div>
+                  <div class="drop-sub">или нажмите для выбора файла</div>
+                  <input type="file" id="pdfFileInput" accept=".pdf" style="display:none">
+                  <button class="btn-outline" onclick="document.getElementById('pdfFileInput').click()">Выбрать файл</button>
+                </div>
+                <div id="pdfStatus" class="pdf-status"></div>
+                <div id="pdfPreview" class="pdf-preview"></div>
+              </div>
+            </div>
+
+            <!-- Manual Input -->
+            <div class="card">
+              <div class="card-header">
+                <h3>✏️ Ввести вручную</h3>
+              </div>
+              <div class="card-body">
+                <form id="manualInvoiceForm">
+                  <div class="form-grid">
+                    <div class="form-group">
+                      <label>Номер счёта</label>
+                      <input type="text" id="invNumber" placeholder="КТ1055" required>
+                    </div>
+                    <div class="form-group">
+                      <label>Дата</label>
+                      <input type="date" id="invDate" required>
+                    </div>
+                    <div class="form-group">
+                      <label>Сервис</label>
+                      <input type="text" id="invService" placeholder="Название сервиса" list="servicesList" required>
+                      <datalist id="servicesList"></datalist>
+                    </div>
+                    <div class="form-group">
+                      <label>Гос. номер автомобиля</label>
+                      <input type="text" id="invVehicle" placeholder="А826ТВ67" list="vehiclesList">
+                      <datalist id="vehiclesList"></datalist>
+                    </div>
+                    <div class="form-group full-width">
+                      <label>Марка/модель автомобиля</label>
+                      <input type="text" id="invModel" placeholder="КамАЗ 65115">
+                    </div>
+                  </div>
+
+                  <div class="section-divider">
+                    <h4>Запчасти</h4>
+                    <button type="button" class="btn-small" onclick="addPartRow()">+ Добавить</button>
+                  </div>
+                  <div id="partsContainer">
+                    <div class="parts-header">
+                      <span>Артикул</span><span>Наименование</span><span>Кол-во</span><span>Цена</span><span></span>
+                    </div>
+                  </div>
+
+                  <div class="section-divider">
+                    <h4>Работы</h4>
+                    <button type="button" class="btn-small" onclick="addWorkRow()">+ Добавить</button>
+                  </div>
+                  <div id="worksContainer">
+                    <div class="parts-header">
+                      <span>Наименование работы</span><span>Норм-ч</span><span>Цена</span><span></span>
+                    </div>
+                  </div>
+
+                  <div class="form-actions">
+                    <div class="total-preview">
+                      Итого: <strong id="formTotal">0 ₽</strong>
+                    </div>
+                    <button type="submit" class="btn-primary">💾 Сохранить счёт</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- end page-container -->
+    </main>
+  </div>
+
+  <!-- Invoice Detail Modal -->
+  <div class="modal-overlay" id="invoiceModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Счёт</h2>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then(registration => {
+          console.log('ServiceWorker registration successful');
+        }).catch(err => {
+          console.log('ServiceWorker registration failed: ', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
