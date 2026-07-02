@@ -22,17 +22,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function loadFromStorage() {
   const saved = localStorage.getItem('autoanalytica_invoices');
+  const deleted = new Set(JSON.parse(localStorage.getItem('autoanalytica_deleted') || '[]'));
   const base = (typeof INVOICES_DATA !== 'undefined') ? INVOICES_DATA : [];
+  const filteredBase = base.filter(i => !deleted.has(i.id));
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
       // Merge: base invoices + any new ones not in base
-      const baseIds = new Set(base.map(i => i.id));
-      const extra = parsed.filter(i => !baseIds.has(i.id));
-      state.invoices = [...base, ...extra];
-    } catch { state.invoices = base; }
+      const baseIds = new Set(filteredBase.map(i => i.id));
+      const extra = parsed.filter(i => !baseIds.has(i.id) && !deleted.has(i.id));
+      state.invoices = [...filteredBase, ...extra];
+    } catch { state.invoices = filteredBase; }
   } else {
-    state.invoices = base;
+    state.invoices = filteredBase;
   }
 }
 
@@ -104,6 +106,7 @@ function updateBadges() {
   document.getElementById('dupBadge').textContent = dupCount;
   const overpayPct = calcOverallOverpay();
   document.getElementById('totalOverpaysStat').textContent = overpayPct > 0 ? `+${overpayPct.toFixed(0)}%` : '—';
+  document.getElementById('totalOverpaysStat').classList.remove('danger');
   if (overpayPct > 0) document.getElementById('totalOverpaysStat').classList.add('danger');
 }
 
@@ -586,7 +589,8 @@ function renderWorksTable() {
     const norm = findNormHours(w.name);
     const avgNorm = w.normHours.length ? w.normHours.reduce((a, b) => a + b, 0) / w.normHours.length : 0;
     const maxPrice = w.prices.length ? Math.max(...w.prices) : 0;
-    const minPrice = w.prices.length ? Math.min(...w.prices.filter(p => p > 0)) : 0;
+    const positvePrices = w.prices.filter(p => p > 0);
+    const minPrice = positvePrices.length ? Math.min(...positvePrices) : 0;
     const priceRange = w.prices.length > 1 && minPrice !== maxPrice ? `${fmtMoney(minPrice)} — ${fmtMoney(maxPrice)}` : fmtMoney(minPrice || maxPrice);
     const normExceeded = norm && avgNorm > norm.norm * 1.3;
     const normHtml = norm
@@ -1122,7 +1126,7 @@ function parsePDFInvoice(flatText, structuredText, filename, linesWithY) {
   let service = 'Неизвестный сервис';
   if (text.includes('ТРАНСХОЛОД') || text.toLowerCase().includes('трансхолод')) service = 'ТрансХолод';
   else if (text.includes('КомТранс') || text.includes('КомТранс Трейд') || text.includes('ЗНКТ')) service = 'КомТранс Трейд';
-  else if (text.includes('ТРАК СЕРВИС') || text.includes('ТРАК') && text.includes('СЕРВИС')) service = 'ТРАК СЕРВИС';
+  else if (text.includes('ТРАК СЕРВИС') || (text.includes('ТРАК') && text.includes('СЕРВИС'))) service = 'ТРАК СЕРВИС';
   else if (text.includes('ТЕХМСК') || text.includes('ТЕХМСК-СЕРВИС')) service = 'ТЕХМСК-СЕРВИС';
   else {
     // Извлечь название из Поставщик, Продавец, Исполнитель, либо просто ООО / ИП
@@ -1367,7 +1371,7 @@ function parseLineItems(inputData, parts, works, laborRate) {
         const distToLast = lastPushedY !== null ? Math.abs(lineObj.y - lastPushedY) : Infinity;
         const distToNext = nextPriceY !== null ? Math.abs(lineObj.y - nextPriceY) : Infinity;
 
-        if (distToLast < distToNext) {
+        if (distToLast < distToNext && lastPushedItem !== null) {
             lastPushedItem.name += ' ' + line;
         } else {
             previousLineBuf = previousLineBuf ? previousLineBuf + ' ' + line : line;
@@ -1566,6 +1570,14 @@ function saveManualInvoice() {
 
 function deleteInvoice(id) {
   if (!confirm('Удалить этот счёт из истории?')) return;
+  const base = (typeof INVOICES_DATA !== 'undefined') ? INVOICES_DATA : [];
+  const baseIds = new Set(base.map(i => i.id));
+  if (baseIds.has(id)) {
+    // Base invoice: mark as deleted in localStorage
+    const deleted = JSON.parse(localStorage.getItem('autoanalytica_deleted') || '[]');
+    deleted.push(id);
+    localStorage.setItem('autoanalytica_deleted', JSON.stringify(deleted));
+  }
   state.invoices = state.invoices.filter(i => i.id !== id);
   saveToStorage();
   updateBadges();
@@ -1610,4 +1622,74 @@ function fmtDate(d) {
   const dt = new Date(d);
   if (isNaN(dt)) return d;
   return `${dt.getDate()} ${months[dt.getMonth()]} ${dt.getFullYear()}`;
+}
+
+// ---- EXPORT / IMPORT ----
+function exportData() {
+  // Export all invoices that are NOT in the base data.js
+  const base = (typeof INVOICES_DATA !== 'undefined') ? INVOICES_DATA : [];
+  const baseIds = new Set(base.map(i => i.id));
+  const extraInvoices = state.invoices.filter(i => !baseIds.has(i.id));
+
+  // Also export deleted base IDs
+  const deleted = JSON.parse(localStorage.getItem('autoanalytica_deleted') || '[]');
+
+  const exportObj = {
+    version: 1,
+    exportDate: new Date().toISOString(),
+    invoices: state.invoices, // Export ALL invoices including base
+    deleted
+  };
+
+  const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `АвтоАналитика_данные_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+
+      if (!data.invoices || !Array.isArray(data.invoices)) {
+        alert('Ошибка: неверный формат файла. Убедитесь, что вы выбрали файл, экспортированный из АвтоАналитики.');
+        return;
+      }
+
+      const count = data.invoices.length;
+      if (!confirm(`Найдено ${count} счетов. Импортировать? Текущие данные будут заменены.`)) {
+        event.target.value = '';
+        return;
+      }
+
+      // Save imported invoices to localStorage, excluding base IDs
+      const base = (typeof INVOICES_DATA !== 'undefined') ? INVOICES_DATA : [];
+      const baseIds = new Set(base.map(i => i.id));
+      const extra = data.invoices.filter(i => !baseIds.has(i.id));
+      localStorage.setItem('autoanalytica_invoices', JSON.stringify(data.invoices));
+
+      // Restore deleted list
+      if (data.deleted && data.deleted.length > 0) {
+        localStorage.setItem('autoanalytica_deleted', JSON.stringify(data.deleted));
+      }
+
+      // Reload state
+      loadFromStorage();
+      renderAll();
+      updateBadges();
+      alert(`✅ Импорт завершён! Загружено счетов: ${state.invoices.length}`);
+    } catch (err) {
+      alert('Ошибка чтения файла: ' + err.message);
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }

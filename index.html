@@ -74,6 +74,15 @@
             <span class="stat-mini-value danger" id="totalOverpaysStat">0%</span>
           </div>
         </div>
+        <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
+          <button class="btn-outline" style="font-size:12px; padding: 6px 8px; text-align:left;" onclick="exportData()">
+            📤 Экспорт данных
+          </button>
+          <label class="btn-outline" style="font-size:12px; padding: 6px 8px; text-align:left; cursor:pointer; margin:0; display:block;">
+            📥 Импорт данных
+            <input type="file" id="importFileInput" accept=".json" style="display:none" onchange="importData(event)">
+          </label>
+        </div>
       </div>
     </aside>
 
