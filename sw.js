@@ -1,4 +1,4 @@
-const CACHE_NAME = 'auto-analitika-v1';
+const CACHE_NAME = 'auto-analitika-v3';
 const ASSETS = [
   './',
   './index.html',
