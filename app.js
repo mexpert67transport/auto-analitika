@@ -18,6 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSearch();
   setupCompFilter();
   renderAll();
+  updateSyncUI();
+  pullFromCloud(false); // Try to pull latest changes on load
 });
 
 function loadFromStorage() {
@@ -43,6 +45,7 @@ function saveToStorage() {
   const baseIds = new Set(base.map(i => i.id));
   const extra = state.invoices.filter(i => !baseIds.has(i.id));
   localStorage.setItem('autoanalytica_invoices', JSON.stringify([...base, ...extra]));
+  pushToCloud(false); // Auto push to cloud if configured
 }
 
 // ---- NAVIGATION ----
@@ -1692,4 +1695,193 @@ function importData(event) {
     event.target.value = '';
   };
   reader.readAsText(file);
+}
+
+// ---- CLOUD SYNC (JSONbin.io) ----
+const JSONBIN_API = 'https://api.jsonbin.io/v3';
+
+function getCloudConfig() {
+  return {
+    apiKey: localStorage.getItem('autoanalytica_cloud_key') || '',
+    binId: localStorage.getItem('autoanalytica_cloud_bin') || ''
+  };
+}
+
+function updateSyncUI() {
+  const { apiKey, binId } = getCloudConfig();
+  const connected = !!(apiKey && binId);
+  const setupBlock = document.getElementById('syncSetupBlock');
+  const connectedBlock = document.getElementById('syncConnectedBlock');
+  const badge = document.getElementById('syncStatusBadge');
+  if (!setupBlock) return;
+
+  if (connected) {
+    setupBlock.style.display = 'none';
+    connectedBlock.style.display = 'block';
+    document.getElementById('syncCodeDisplay').textContent = binId;
+    if (badge) {
+      badge.textContent = '✅ активна';
+      badge.style.background = 'rgba(16,185,129,0.2)';
+      badge.style.color = 'var(--success)';
+    }
+  } else {
+    setupBlock.style.display = 'block';
+    connectedBlock.style.display = 'none';
+    if (badge) {
+      badge.textContent = 'не настроена';
+      badge.style.background = 'rgba(255,255,255,0.08)';
+      badge.style.color = 'var(--text-muted)';
+    }
+  }
+}
+
+async function setupCloudSync() {
+  const keyInput = document.getElementById('syncApiKey');
+  const binInput = document.getElementById('syncBinId');
+  const apiKey = keyInput?.value.trim();
+  const existingBinId = binInput?.value.trim();
+
+  if (!apiKey) {
+    alert('Введите API-ключ JSONbin.io');
+    return;
+  }
+
+  const btn = document.querySelector('[onclick="setupCloudSync()"]');
+  if (btn) { btn.textContent = '⏳ Подключение...'; btn.disabled = true; }
+
+  try {
+    if (existingBinId) {
+      // Connect to existing bin — verify it exists
+      const res = await fetch(`${JSONBIN_API}/b/${existingBinId}/latest`, {
+        headers: { 'X-Master-Key': apiKey }
+      });
+      if (!res.ok) throw new Error('Не удалось найти хранилище. Проверьте код синхронизации.');
+      const data = await res.json();
+
+      localStorage.setItem('autoanalytica_cloud_key', apiKey);
+      localStorage.setItem('autoanalytica_cloud_bin', existingBinId);
+
+      // Load data from cloud
+      if (data.record?.invoices) {
+        localStorage.setItem('autoanalytica_invoices', JSON.stringify(data.record.invoices));
+        if (data.record.deleted) localStorage.setItem('autoanalytica_deleted', JSON.stringify(data.record.deleted));
+        loadFromStorage();
+        renderAll();
+        updateBadges();
+      }
+
+      updateSyncUI();
+      const t = document.getElementById('syncLastTime');
+      if (t) t.textContent = 'Данные загружены из облака: ' + new Date().toLocaleTimeString('ru-RU');
+      alert(`✅ Подключено! Загружено счетов: ${state.invoices.length}`);
+
+    } else {
+      // Create new bin
+      const payload = {
+        invoices: state.invoices,
+        deleted: JSON.parse(localStorage.getItem('autoanalytica_deleted') || '[]'),
+        lastSync: new Date().toISOString()
+      };
+
+      const res = await fetch(`${JSONBIN_API}/b`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Master-Key': apiKey,
+          'X-Bin-Name': 'auto-analitika',
+          'X-Bin-Private': 'true'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Ошибка создания хранилища');
+      }
+
+      const result = await res.json();
+      const newBinId = result.metadata.id;
+
+      localStorage.setItem('autoanalytica_cloud_key', apiKey);
+      localStorage.setItem('autoanalytica_cloud_bin', newBinId);
+
+      updateSyncUI();
+      alert(`✅ Облако подключено!\n\nКод синхронизации для телефона:\n${newBinId}\n\nСохраните этот код — он понадобится при настройке на другом устройстве.`);
+    }
+  } catch (e) {
+    alert('❌ Ошибка: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = '🔗 Подключить облако'; btn.disabled = false; }
+  }
+}
+
+async function pushToCloud(showAlert = false) {
+  const { apiKey, binId } = getCloudConfig();
+  if (!apiKey || !binId) return;
+
+  const payload = {
+    invoices: state.invoices,
+    deleted: JSON.parse(localStorage.getItem('autoanalytica_deleted') || '[]'),
+    lastSync: new Date().toISOString()
+  };
+
+  try {
+    const res = await fetch(`${JSONBIN_API}/b/${binId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': apiKey
+      },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      const t = document.getElementById('syncLastTime');
+      if (t) t.textContent = 'Последняя синхронизация: ' + new Date().toLocaleTimeString('ru-RU');
+      if (showAlert) alert('✅ Данные сохранены в облаке!');
+    }
+  } catch (e) {
+    if (showAlert) alert('❌ Ошибка сохранения в облако: ' + e.message);
+  }
+}
+
+async function pullFromCloud(showAlert = false) {
+  const { apiKey, binId } = getCloudConfig();
+  if (!apiKey || !binId) return;
+
+  try {
+    const res = await fetch(`${JSONBIN_API}/b/${binId}/latest`, {
+      headers: { 'X-Master-Key': apiKey }
+    });
+    if (!res.ok) return;
+
+    const data = await res.json();
+    if (data.record?.invoices) {
+      localStorage.setItem('autoanalytica_invoices', JSON.stringify(data.record.invoices));
+      if (data.record.deleted) localStorage.setItem('autoanalytica_deleted', JSON.stringify(data.record.deleted));
+      loadFromStorage();
+      renderAll();
+      updateBadges();
+      const t = document.getElementById('syncLastTime');
+      if (t) t.textContent = 'Загружено из облака: ' + new Date().toLocaleTimeString('ru-RU');
+      if (showAlert) alert(`✅ Загружено счетов: ${state.invoices.length}`);
+    }
+  } catch (e) {
+    if (showAlert) alert('❌ Ошибка загрузки из облака: ' + e.message);
+  }
+}
+
+function copySyncCode() {
+  const code = document.getElementById('syncCodeDisplay')?.textContent;
+  if (code) {
+    navigator.clipboard.writeText(code).then(() => alert('Код скопирован!')).catch(() => {
+      prompt('Скопируйте код:', code);
+    });
+  }
+}
+
+function disconnectCloud() {
+  if (!confirm('Отключить синхронизацию? Данные на этом устройстве останутся.')) return;
+  localStorage.removeItem('autoanalytica_cloud_key');
+  localStorage.removeItem('autoanalytica_cloud_bin');
+  updateSyncUI();
 }
