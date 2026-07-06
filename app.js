@@ -19,7 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupCompFilter();
   renderAll();
   updateSyncUI();
-  pullFromCloud(false); // Try to pull latest changes on load
+  // Pull from cloud only if sync is configured, with slight delay to not block UI
+  setTimeout(() => pullFromCloud(false), 1000);
 });
 
 function loadFromStorage() {
@@ -41,10 +42,8 @@ function loadFromStorage() {
 }
 
 function saveToStorage() {
-  const base = (typeof INVOICES_DATA !== 'undefined') ? INVOICES_DATA : [];
-  const baseIds = new Set(base.map(i => i.id));
-  const extra = state.invoices.filter(i => !baseIds.has(i.id));
-  localStorage.setItem('autoanalytica_invoices', JSON.stringify([...base, ...extra]));
+  // Save ALL current invoices to localStorage
+  localStorage.setItem('autoanalytica_invoices', JSON.stringify(state.invoices));
   pushToCloud(false); // Auto push to cloud if configured
 }
 
@@ -117,14 +116,16 @@ function updateBadges() {
 
 // ---- DASHBOARD ----
 function renderDashboard() {
-  const total = state.invoices.reduce((s, i) => s + i.totalAmount, 0);
+  const total = state.invoices.reduce((s, i) => s + (i.totalAmount || 0), 0);
   document.getElementById('statTotalSum').textContent = fmtMoney(total);
 
   const overpay = calcOverallOverpay();
   const overpayEl = document.getElementById('statOverpay');
+  const overpayCard = overpayEl?.closest('.stat-card');
+  if (overpayCard) overpayCard.classList.remove('warning'); // Always reset first
   if (overpay > 0) {
     overpayEl.textContent = `+${overpay.toFixed(1)}%`;
-    overpayEl.closest('.stat-card').classList.add('warning');
+    if (overpayCard) overpayCard.classList.add('warning');
   } else {
     overpayEl.textContent = 'Норма';
   }
@@ -145,7 +146,7 @@ function renderDashboard() {
 function calcOverallOverpay() {
   let totalCharged = 0, totalMarket = 0;
   state.invoices.forEach(inv => {
-    inv.parts.forEach(p => {
+    (inv.parts || []).forEach(p => {
       const market = findMarketPrice(p.name);
       if (market && p.price > 0) {
         totalCharged += p.sum;
@@ -242,7 +243,7 @@ function renderTimelineChart() {
 function renderTopParts() {
   const partsMap = {};
   state.invoices.forEach(inv => {
-    inv.parts.forEach(p => {
+    (inv.parts || []).forEach(p => {
       if (!partsMap[p.name]) partsMap[p.name] = { name: p.name, total: 0 };
       partsMap[p.name].total += p.sum;
     });
@@ -297,8 +298,8 @@ function renderInvoicesTable() {
   }
 
   tbody.innerHTML = filtered.map(inv => {
-    const partsSum = inv.parts.reduce((s, p) => s + p.sum, 0);
-    const worksSum = inv.works.reduce((s, w) => s + w.sum, 0);
+    const partsSum = (inv.parts || []).reduce((s, p) => s + p.sum, 0);
+    const worksSum = (inv.works || []).reduce((s, w) => s + w.sum, 0);
     const overpay = calcInvoiceOverpay(inv);
     const isNew = inv.source === 'pdf';
     const overpayHtml = overpay > 5
@@ -326,7 +327,7 @@ function renderInvoicesTable() {
 
 function calcInvoiceOverpay(inv) {
   let charged = 0, market = 0;
-  inv.parts.forEach(p => {
+  (inv.parts || []).forEach(p => {
     const mp = findMarketPrice(p.name);
     if (mp) { charged += p.sum; market += mp * p.qty; }
   });
@@ -357,7 +358,7 @@ function renderComparisonTable() {
   state.invoices.forEach(inv => {
     // Parts rows
     if (filter === 'all' || filter === 'parts' || filter === 'overpay') {
-      inv.parts.forEach(p => {
+      (inv.parts || []).forEach(p => {
         if (p.sum === 0) return;
         const marketPrice = findMarketPriceForPart(p);
         const diff = marketPrice ? ((p.price - marketPrice) / marketPrice * 100) : null;
@@ -367,7 +368,7 @@ function renderComparisonTable() {
     }
     // Works rows
     if (filter === 'all' || filter === 'works' || filter === 'overpay') {
-      inv.works.forEach(w => {
+      (inv.works || []).forEach(w => {
         const norm = findNormHours(w.name);
         const normDiff = norm ? ((w.normHours - norm.norm) / norm.norm * 100) : null;
         if (filter === 'overpay' && (normDiff === null || normDiff <= 20)) return;
@@ -503,7 +504,7 @@ function renderPartsTable() {
   const partsMap = {};
 
   state.invoices.forEach(inv => {
-    inv.parts.forEach(p => {
+    (inv.parts || []).forEach(p => {
       const key = `${p.article}|${p.name}`;
       if (!partsMap[key]) {
         partsMap[key] = {
@@ -564,7 +565,7 @@ function renderWorksTable() {
   const worksMap = {};
 
   state.invoices.forEach(inv => {
-    inv.works.forEach(w => {
+    (inv.works || []).forEach(w => {
       const key = w.name;
       if (!worksMap[key]) {
         worksMap[key] = { name: w.name, services: new Set(), count: 0, prices: [], normHours: [], totalSum: 0, rates: [], isNew: false };
@@ -628,7 +629,7 @@ function findDuplicates() {
   // 1. Дубликаты запчастей в одном счёте (одинаковый артикул)
   state.invoices.forEach(inv => {
     const artCount = {};
-    inv.parts.forEach(p => {
+    (inv.parts || []).forEach(p => {
       if (!p.article || p.article === '-' || p.article === '000004979') return;
       if (!artCount[p.article]) artCount[p.article] = [];
       artCount[p.article].push(p);
@@ -648,7 +649,7 @@ function findDuplicates() {
 
     // 2. Дубликаты работ в одном счёте
     const workCount = {};
-    inv.works.forEach(w => {
+    (inv.works || []).forEach(w => {
       if (!workCount[w.name]) workCount[w.name] = [];
       workCount[w.name].push(w);
     });
@@ -668,7 +669,7 @@ function findDuplicates() {
 
   // 3. Явно помеченные задвоения
   state.invoices.forEach(inv => {
-    inv.parts.filter(p => p.isDuplicate).forEach(p => {
+    (inv.parts || []).filter(p => p.isDuplicate).forEach(p => {
       dups.push({
         invoiceId: inv.id,
         invoiceNum: inv.number,
@@ -729,8 +730,8 @@ function showInvoice(id) {
   const inv = state.invoices.find(i => i.id === id);
   if (!inv) return;
 
-  const partsSum = inv.parts.reduce((s, p) => s + p.sum, 0);
-  const worksSum = inv.works.reduce((s, w) => s + w.sum, 0);
+  const partsSum = (inv.parts || []).reduce((s, p) => s + p.sum, 0);
+  const worksSum = (inv.works || []).reduce((s, w) => s + w.sum, 0);
   const overpay = calcInvoiceOverpay(inv);
 
   document.getElementById('modalTitle').innerHTML = `Счёт № ${inv.number} от ${fmtDate(inv.date)} 
@@ -843,8 +844,8 @@ function downloadInvoicePDF(id) {
   const inv = state.invoices.find(i => i.id === id);
   if (!inv) return;
 
-  const partsSum = inv.parts.reduce((s, p) => s + p.sum, 0);
-  const worksSum = inv.works.reduce((s, w) => s + w.sum, 0);
+  const partsSum = (inv.parts || []).reduce((s, p) => s + p.sum, 0);
+  const worksSum = (inv.works || []).reduce((s, w) => s + w.sum, 0);
   const overpay = calcInvoiceOverpay(inv);
 
   // Generate clean, printable HTML report
@@ -1629,10 +1630,7 @@ function fmtDate(d) {
 
 // ---- EXPORT / IMPORT ----
 function exportData() {
-  // Export all invoices that are NOT in the base data.js
-  const base = (typeof INVOICES_DATA !== 'undefined') ? INVOICES_DATA : [];
-  const baseIds = new Set(base.map(i => i.id));
-  const extraInvoices = state.invoices.filter(i => !baseIds.has(i.id));
+  // Export all current invoices
 
   // Also export deleted base IDs
   const deleted = JSON.parse(localStorage.getItem('autoanalytica_deleted') || '[]');

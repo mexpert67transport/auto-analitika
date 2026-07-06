@@ -1,4 +1,4 @@
-const CACHE_NAME = 'auto-analitika-v3';
+const CACHE_NAME = 'auto-analitika-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -26,28 +26,33 @@ self.addEventListener('activate', e => {
       return Promise.all(
         keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
+// Network-first strategy: try network, fall back to cache
+// This ensures updates are always picked up when online
 self.addEventListener('fetch', e => {
+  // Skip non-GET and API requests (JSONbin cloud sync)
+  if (e.request.method !== 'GET' || e.request.url.includes('api.jsonbin.io')) {
+    return;
+  }
+
   e.respondWith(
-    caches.match(e.request)
-      .then(response => {
-        if (response) {
-          return response;
-        }
-        return fetch(e.request).then(networkResponse => {
-          // Check if we received a valid response
-          if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-            return networkResponse;
-          }
+    fetch(e.request)
+      .then(networkResponse => {
+        // Update cache with fresh response
+        if (networkResponse && networkResponse.status === 200) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
             cache.put(e.request, responseToCache);
           });
-          return networkResponse;
-        });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        // Network failed — serve from cache (offline mode)
+        return caches.match(e.request);
       })
   );
 });
