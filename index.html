@@ -110,35 +110,48 @@
           </div>
 
           <div class="stats-grid">
-            <div class="stat-card">
+            <div class="stat-card stat-card-link" onclick="navigateTo('invoices')" title="Перейти к счетам">
               <div class="stat-icon">💰</div>
               <div class="stat-info">
                 <div class="stat-value" id="statTotalSum">—</div>
                 <div class="stat-label">Сумма всех счетов</div>
               </div>
               <div class="stat-trend up" id="statTotalTrend"></div>
+              <div class="stat-arrow">→</div>
             </div>
-            <div class="stat-card warning">
+            <div class="stat-card warning stat-card-link" onclick="navigateTo('comparison')" title="Перейти к сравнению цен">
               <div class="stat-icon">📈</div>
               <div class="stat-info">
                 <div class="stat-value" id="statOverpay">—</div>
                 <div class="stat-label">Переплата к рынку</div>
               </div>
+              <div class="stat-arrow">→</div>
             </div>
-            <div class="stat-card danger">
+            <div class="stat-card danger stat-card-link" onclick="navigateTo('duplicates')" title="Перейти к задвоениям">
               <div class="stat-icon">⚠️</div>
               <div class="stat-info">
                 <div class="stat-value" id="statDuplicates">—</div>
                 <div class="stat-label">Задвоений работ</div>
               </div>
+              <div class="stat-arrow">→</div>
             </div>
-            <div class="stat-card success">
+            <div class="stat-card success stat-card-link" onclick="toggleVehicleDropdown(event)" title="Показать автомобили" id="vehicleStatCard">
               <div class="stat-icon">🚛</div>
               <div class="stat-info">
                 <div class="stat-value" id="statVehicles">—</div>
                 <div class="stat-label">Автомобилей</div>
               </div>
+              <div class="stat-arrow" id="vehicleArrow">▼</div>
             </div>
+          </div>
+
+          <!-- Выпадающий список автомобилей -->
+          <div id="vehicleDropdown" class="vehicle-dropdown" style="display:none">
+            <div class="vehicle-dropdown-header">
+              <span>🚛 Список автомобилей</span>
+              <button onclick="closeVehicleDropdown()" style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1">✕</button>
+            </div>
+            <div id="vehicleDropdownList"></div>
           </div>
 
           <div class="dashboard-grid">

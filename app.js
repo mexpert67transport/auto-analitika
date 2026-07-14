@@ -278,6 +278,100 @@ function renderRecentInvoices() {
   `).join('');
 }
 
+// ---- VEHICLE DROPDOWN ----
+function toggleVehicleDropdown(e) {
+  e.stopPropagation();
+  const dropdown = document.getElementById('vehicleDropdown');
+  const arrow = document.getElementById('vehicleArrow');
+  const isOpen = dropdown.style.display !== 'none';
+
+  if (isOpen) {
+    closeVehicleDropdown();
+  } else {
+    renderVehicleDropdown();
+    dropdown.style.display = 'block';
+    if (arrow) arrow.textContent = '▲';
+    // Закрыть при клике вне панели
+    setTimeout(() => {
+      document.addEventListener('click', closeOnOutsideClick);
+    }, 0);
+  }
+}
+
+function closeVehicleDropdown() {
+  const dropdown = document.getElementById('vehicleDropdown');
+  const arrow = document.getElementById('vehicleArrow');
+  if (dropdown) dropdown.style.display = 'none';
+  if (arrow) arrow.textContent = '▼';
+  document.removeEventListener('click', closeOnOutsideClick);
+}
+
+function closeOnOutsideClick(e) {
+  const dropdown = document.getElementById('vehicleDropdown');
+  const card = document.getElementById('vehicleStatCard');
+  if (!dropdown?.contains(e.target) && !card?.contains(e.target)) {
+    closeVehicleDropdown();
+  }
+}
+
+function renderVehicleDropdown() {
+  // Собираем статистику по каждому автомобилю
+  const vehicleMap = {};
+  state.invoices.forEach(inv => {
+    const plate = inv.vehicle || 'Без номера';
+    if (!vehicleMap[plate]) {
+      vehicleMap[plate] = {
+        plate,
+        model: inv.vehicleModel || '',
+        count: 0,
+        total: 0
+      };
+    }
+    vehicleMap[plate].count++;
+    vehicleMap[plate].total += (inv.totalAmount || 0);
+    // Обновляем модель если есть более информативная
+    if (inv.vehicleModel && inv.vehicleModel.length > vehicleMap[plate].model.length) {
+      vehicleMap[plate].model = inv.vehicleModel;
+    }
+  });
+
+  const vehicles = Object.values(vehicleMap).sort((a, b) => b.total - a.total);
+  const list = document.getElementById('vehicleDropdownList');
+
+  if (!vehicles.length) {
+    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных</div>`;
+    return;
+  }
+
+  list.innerHTML = vehicles.map(v => `
+    <div class="vehicle-row" onclick="navigateToVehicle('${v.plate.replace(/'/g, "\\'")}')">
+      <div class="vehicle-row-icon">🚛</div>
+      <div class="vehicle-row-info">
+        <div class="vehicle-row-plate">${v.plate}</div>
+        ${v.model ? `<div class="vehicle-row-model">${v.model}</div>` : ''}
+      </div>
+      <div class="vehicle-row-stats">
+        <div class="vehicle-row-sum">${fmtMoney(v.total)}</div>
+        <div class="vehicle-row-count">${v.count} ${v.count === 1 ? 'счёт' : v.count < 5 ? 'счёта' : 'счетов'}</div>
+      </div>
+      <div class="vehicle-row-arrow">›</div>
+    </div>
+  `).join('');
+}
+
+function navigateToVehicle(plate) {
+  closeVehicleDropdown();
+  navigateTo('invoices');
+  // Устанавливаем фильтр по автомобилю после рендера
+  setTimeout(() => {
+    const vehFilter = document.getElementById('invoiceVehicleFilter');
+    if (vehFilter) {
+      vehFilter.value = plate;
+      renderInvoicesTable();
+    }
+  }, 50);
+}
+
 // ---- INVOICES TABLE ----
 function renderInvoicesTable() {
   const search = (document.getElementById('invoiceSearch')?.value || '').toLowerCase();
@@ -285,15 +379,19 @@ function renderInvoicesTable() {
   const vehFilter = document.getElementById('invoiceVehicleFilter')?.value || '';
 
   // Fill filter dropdowns
-  fillDropdown('invoiceServiceFilter', [...new Set(state.invoices.map(i => i.service))]);
-  fillDropdown('invoiceVehicleFilter', [...new Set(state.invoices.map(i => i.vehicle))]);
+  fillDropdown('invoiceServiceFilter', [...new Set(state.invoices.map(i => i.service))].filter(Boolean));
+  fillDropdown('invoiceVehicleFilter', [...new Set(state.invoices.map(i => i.vehicle || 'Без номера'))]);
 
   let filtered = state.invoices.filter(inv => {
     const text = `${inv.number} ${inv.service} ${inv.vehicle} ${inv.vehicleModel} ${fmtDate(inv.date)}`.toLowerCase();
+    const vehValue = inv.vehicle || 'Без номера';
     return (!search || text.includes(search))
       && (!svcFilter || inv.service === svcFilter)
-      && (!vehFilter || inv.vehicle === vehFilter);
+      && (!vehFilter || vehValue === vehFilter);
   });
+
+  // Сортируем по дате — новые сверху
+  filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const tbody = document.getElementById('invoicesBody');
   if (!filtered.length) {
@@ -1041,21 +1139,41 @@ async function handlePDF(file) {
 
     const parsed = parsePDFInvoice(flatText, structuredText, file.name, linesWithY);
     if (parsed) {
-      // Удаляем дубликат если был ранее добавлен пустым
-      state.invoices = state.invoices.filter(i => !(i.number === parsed.number && i.date === parsed.date));
-      state.invoices.push(parsed);
-      saveToStorage();
-      updateBadges();
+      // Проверяем: уже есть такой счёт в базе?
+      const existing = state.invoices.find(i =>
+        i.number === parsed.number && i.date === parsed.date
+      );
 
-      const partsCount = parsed.parts.length;
-      const worksCount = parsed.works.length;
-      status.className = 'pdf-status success';
-      status.innerHTML = `
-        ✅ <strong>Счёт № ${parsed.number} сохранён!</strong><br>
-        📦 Запчастей: ${partsCount} | ⚙️ Работ: ${worksCount} | 💰 Итого: <strong>${fmtMoney(parsed.totalAmount)}</strong>
-      `;
-      // Автоматически открываем модальное окно со счетом
-      showInvoice(parsed.id);
+      if (existing) {
+        status.className = 'pdf-status error';
+        status.innerHTML = `
+          ⚠️ <strong>Счёт № ${parsed.number} от ${fmtDate(parsed.date)} уже есть в базе!</strong><br>
+          <small style="color:var(--text-muted)">Сервис: ${existing.service} · Сумма: ${fmtMoney(existing.totalAmount)}</small><br><br>
+          <button class="btn-small" onclick="replaceDuplicateInvoice('${existing.id}', this)" 
+            style="background:var(--danger);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;margin-right:8px">
+            🔄 Заменить существующий
+          </button>
+          <button class="btn-small" onclick="this.closest('.pdf-status').remove()" 
+            style="background:var(--surface-light);color:var(--text);border:1px solid var(--border);padding:6px 14px;border-radius:6px;cursor:pointer">
+            ✕ Отмена
+          </button>
+        `;
+        // Сохраняем parsed во временное хранилище для возможной замены
+        window._pendingInvoice = parsed;
+      } else {
+        state.invoices.push(parsed);
+        saveToStorage();
+        updateBadges();
+
+        const partsCount = parsed.parts.length;
+        const worksCount = parsed.works.length;
+        status.className = 'pdf-status success';
+        status.innerHTML = `
+          ✅ <strong>Счёт № ${parsed.number} сохранён!</strong><br>
+          📦 Запчастей: ${partsCount} | ⚙️ Работ: ${worksCount} | 💰 Итого: <strong>${fmtMoney(parsed.totalAmount)}</strong>
+        `;
+        showInvoice(parsed.id);
+      }
     } else {
       status.className = 'pdf-status error';
       status.innerHTML = `⚠️ Не удалось распознать номер счёта.<br>Заполните форму вручную.
@@ -1066,6 +1184,28 @@ async function handlePDF(file) {
     status.textContent = `❌ Ошибка чтения PDF: ${e.message}`;
     console.error(e);
   }
+}
+
+// Заменяет существующий счёт на новый (после предупреждения о дубликате при загрузке PDF)
+function replaceDuplicateInvoice(existingId, btn) {
+  const pending = window._pendingInvoice;
+  if (!pending) return;
+
+  state.invoices = state.invoices.filter(i => i.id !== existingId);
+  state.invoices.push(pending);
+  saveToStorage();
+  updateBadges();
+  window._pendingInvoice = null;
+
+  const statusEl = btn?.closest('.pdf-status');
+  if (statusEl) {
+    statusEl.className = 'pdf-status success';
+    statusEl.innerHTML = `
+      ✅ <strong>Счёт № ${pending.number} заменён!</strong><br>
+      📦 Запчастей: ${pending.parts.length} | ⚙️ Работ: ${pending.works.length} | 💰 Итого: <strong>${fmtMoney(pending.totalAmount)}</strong>
+    `;
+  }
+  showInvoice(pending.id);
 }
 
 // ===== УМНЫЙ ПАРСЕР PDF =====
@@ -1552,6 +1692,22 @@ function saveManualInvoice() {
     const price = parseFloat(form.querySelector(`[name="work_price_${i}"]`)?.value || 0);
     inv.works.push({ name, normHours: norm, rate: 0, sum: price });
     inv.totalAmount += price;
+  }
+
+  // Проверяем дубликат перед сохранением
+  const existing = state.invoices.find(i =>
+    i.number === inv.number && i.date === inv.date
+  );
+
+  if (existing) {
+    const replace = confirm(
+      `⚠️ Счёт № ${inv.number} от ${fmtDate(inv.date)} уже есть в базе!\n` +
+      `Сервис: ${existing.service}\nСумма: ${fmtMoney(existing.totalAmount)}\n\n` +
+      `Нажмите OK чтобы заменить, или Отмена чтобы оставить оба.`
+    );
+    if (!replace) return;
+    // Удаляем существующий и добавляем новый
+    state.invoices = state.invoices.filter(i => i.id !== existing.id);
   }
 
   state.invoices.push(inv);
