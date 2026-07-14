@@ -42,8 +42,12 @@ function loadFromStorage() {
 }
 
 function saveToStorage() {
-  // Save ALL current invoices to localStorage
-  localStorage.setItem('autoanalytica_invoices', JSON.stringify(state.invoices));
+  // Only save invoices that are NOT in the base data.js
+  // Base invoices are always loaded fresh from data.js on startup
+  const base = (typeof INVOICES_DATA !== 'undefined') ? INVOICES_DATA : [];
+  const baseIds = new Set(base.map(i => i.id));
+  const extra = state.invoices.filter(i => !baseIds.has(i.id));
+  localStorage.setItem('autoanalytica_invoices', JSON.stringify(extra));
   pushToCloud(false); // Auto push to cloud if configured
 }
 
@@ -1759,9 +1763,12 @@ async function setupCloudSync() {
       localStorage.setItem('autoanalytica_cloud_key', apiKey);
       localStorage.setItem('autoanalytica_cloud_bin', existingBinId);
 
-      // Load data from cloud
+      // Load data from cloud (only store extra, not base invoices)
       if (data.record?.invoices) {
-        localStorage.setItem('autoanalytica_invoices', JSON.stringify(data.record.invoices));
+        const base = (typeof INVOICES_DATA !== 'undefined') ? INVOICES_DATA : [];
+        const baseIds = new Set(base.map(i => i.id));
+        const extraOnly = data.record.invoices.filter(i => !baseIds.has(i.id));
+        localStorage.setItem('autoanalytica_invoices', JSON.stringify(extraOnly));
         if (data.record.deleted) localStorage.setItem('autoanalytica_deleted', JSON.stringify(data.record.deleted));
         loadFromStorage();
         renderAll();
@@ -1854,7 +1861,11 @@ async function pullFromCloud(showAlert = false) {
 
     const data = await res.json();
     if (data.record?.invoices) {
-      localStorage.setItem('autoanalytica_invoices', JSON.stringify(data.record.invoices));
+      // Only save extra invoices (not in base data.js) to avoid duplication on loadFromStorage
+      const base = (typeof INVOICES_DATA !== 'undefined') ? INVOICES_DATA : [];
+      const baseIds = new Set(base.map(i => i.id));
+      const extraOnly = data.record.invoices.filter(i => !baseIds.has(i.id));
+      localStorage.setItem('autoanalytica_invoices', JSON.stringify(extraOnly));
       if (data.record.deleted) localStorage.setItem('autoanalytica_deleted', JSON.stringify(data.record.deleted));
       loadFromStorage();
       renderAll();
