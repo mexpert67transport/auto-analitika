@@ -77,6 +77,9 @@ function setupNavigation() {
 
 function navigateTo(page) {
   currentPage = page;
+  // Закрываем все оверлеи при смене страницы
+  closeModal();
+  closeVehicleDropdown();
   document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
   const navItem = document.querySelector(`[data-page="${page}"]`);
   if (navItem) navItem.classList.add('active');
@@ -1744,14 +1747,14 @@ function deleteInvoice(id) {
   const base = (typeof INVOICES_DATA !== 'undefined') ? INVOICES_DATA : [];
   const baseIds = new Set(base.map(i => i.id));
   if (baseIds.has(id)) {
-    // Base invoice: mark as deleted in localStorage
     const deleted = JSON.parse(localStorage.getItem('autoanalytica_deleted') || '[]');
     deleted.push(id);
     localStorage.setItem('autoanalytica_deleted', JSON.stringify(deleted));
   }
   state.invoices = state.invoices.filter(i => i.id !== id);
+  closeModal(); // Закрываем модал если счёт удалён из него
   saveToStorage();
-  updateBadges();
+  renderAll(); // Обновляет дашборд, бейджи и таблицу счетов
   renderInvoicesTable();
 }
 
