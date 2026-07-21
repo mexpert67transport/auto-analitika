@@ -941,7 +941,8 @@ function saveInvoiceEdits(id) {
   inv.vehicleModel = document.getElementById('editVehicleModel').value.trim();
   
   saveToStorage();
-  renderAll(); // Обновляет все дашборды, бейджи и таблицы
+  renderAll(); // Обновляет дашборд, бейджи и все таблицы
+  renderInvoicesTable(); // Обновляет таблицу счетов если пользователь на ней
   showInvoice(id); // Возвращаемся к просмотру счёта
 }
 

@@ -367,7 +367,7 @@
                   <div class="drop-text">Перетащите PDF-счёт сюда</div>
                   <div class="drop-sub">или нажмите для выбора файла</div>
                   <input type="file" id="pdfFileInput" accept=".pdf" style="display:none">
-                  <button class="btn-outline" onclick="document.getElementById('pdfFileInput').click()">Выбрать файл</button>
+                  <button class="btn-outline" onclick="event.stopPropagation(); document.getElementById('pdfFileInput').click()">Выбрать файл</button>
                 </div>
                 <div id="pdfStatus" class="pdf-status"></div>
                 <div id="pdfPreview" class="pdf-preview"></div>
