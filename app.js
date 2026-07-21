@@ -271,7 +271,7 @@ function renderRecentInvoices() {
       <div class="ri-icon">📄</div>
       <div class="ri-info">
         <div class="ri-num">№ ${inv.number}</div>
-        <div class="ri-meta">${fmtDate(inv.date)} · ${inv.service} · ${inv.vehicle}</div>
+        <div class="ri-meta">${fmtDate(inv.date)} · ${inv.service} · ${inv.vehicle || '—'}</div>
       </div>
       <div class="ri-sum">${fmtMoney(inv.totalAmount)}</div>
     </div>
@@ -847,7 +847,7 @@ function showInvoice(id) {
       <div class="stat-card ${overpay > 10 ? 'warning' : 'success'}" style="padding:14px"><div class="stat-icon" style="font-size:20px">${overpay > 10 ? '📈' : '✅'}</div><div class="stat-info"><div class="stat-value" style="font-size:15px">${overpay > 0 ? '+' : ''}${overpay.toFixed(0)}%</div><div class="stat-label">К рынку</div></div></div>
     </div>
 
-    <h4 style="margin-bottom:10px;color:var(--text-secondary)">🔧 ЗАПЧАСТИ (${inv.parts.length} позиций, итого ${fmtMoney(partsSum)})</h4>
+    <h4 style="margin-bottom:10px;color:var(--text-secondary)">🔧 ЗАПЧАСТИ (${(inv.parts || []).length} позиций, итого ${fmtMoney(partsSum)})</h4>
     <table class="data-table" style="margin-bottom:20px">
       <thead><tr><th>Артикул</th><th>Наименование</th><th>Бренд</th><th>Кол-во</th><th>Цена</th><th>Сумма</th><th>Рын. цена</th><th>Разница</th></tr></thead>
       <tbody>
@@ -869,7 +869,7 @@ function showInvoice(id) {
       </tbody>
     </table>
 
-    <h4 style="margin-bottom:10px;color:var(--text-secondary)">⚙️ РАБОТЫ (${inv.works.length} позиций, итого ${fmtMoney(worksSum)})</h4>
+    <h4 style="margin-bottom:10px;color:var(--text-secondary)">⚙️ РАБОТЫ (${(inv.works || []).length} позиций, итого ${fmtMoney(worksSum)})</h4>
     <table class="data-table">
       <thead><tr><th>Наименование работы</th><th>Норм-ч (факт)</th><th>Норм-ч (норм.)</th><th>Ставка</th><th>Сумма</th><th>Статус</th></tr></thead>
       <tbody>
@@ -978,7 +978,7 @@ function downloadInvoicePDF(id) {
       </div>
 
       <div style="page-break-inside: auto;">
-        <h3 style="color: #1e3a8a; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; margin-bottom: 15px; page-break-after: avoid;">Запчасти (${inv.parts.length} шт., на сумму ${fmtMoney(partsSum)})</h3>
+        <h3 style="color: #1e3a8a; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; margin-bottom: 15px; page-break-after: avoid;">Запчасти (${(inv.parts || []).length} шт., на сумму ${fmtMoney(partsSum)})</h3>
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 12px; page-break-inside: auto;">
           <thead>
             <tr style="background: #f9fafb; text-align: left; page-break-inside: avoid;">
@@ -1012,7 +1012,7 @@ function downloadInvoicePDF(id) {
       </div>
 
       <div style="page-break-inside: auto;">
-        <h3 style="color: #1e3a8a; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; margin-bottom: 15px; page-break-after: avoid;">Работы (${inv.works.length} шт., на сумму ${fmtMoney(worksSum)})</h3>
+        <h3 style="color: #1e3a8a; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; margin-bottom: 15px; page-break-after: avoid;">Работы (${(inv.works || []).length} шт., на сумму ${fmtMoney(worksSum)})</h3>
         <table style="width: 100%; border-collapse: collapse; font-size: 12px; page-break-inside: auto;">
           <thead>
             <tr style="background: #f9fafb; text-align: left; page-break-inside: avoid;">
@@ -1660,13 +1660,20 @@ function updateFormTotal() {
 function saveManualInvoice() {
   const form = document.getElementById('manualInvoiceForm');
   const id = `MAN-${Date.now()}`;
+  const invNumber = document.getElementById('invNumber').value.trim();
+  const invDate = document.getElementById('invDate').value.trim();
+
+  // Базовая валидация
+  if (!invNumber) { alert('Укажите номер счёта!'); return; }
+  if (!invDate) { alert('Укажите дату счёта!'); return; }
+
   const inv = {
     id,
-    number: document.getElementById('invNumber').value,
-    date: document.getElementById('invDate').value,
-    service: document.getElementById('invService').value,
-    vehicle: document.getElementById('invVehicle').value,
-    vehicleModel: document.getElementById('invModel').value,
+    number: invNumber,
+    date: invDate,
+    service: document.getElementById('invService').value.trim() || 'Неизвестный сервис',
+    vehicle: document.getElementById('invVehicle').value.trim(),
+    vehicleModel: document.getElementById('invModel').value.trim(),
     laborRate: 3000,
     totalAmount: 0,
     parts: [],
@@ -1835,7 +1842,8 @@ function importData(event) {
       const base = (typeof INVOICES_DATA !== 'undefined') ? INVOICES_DATA : [];
       const baseIds = new Set(base.map(i => i.id));
       const extra = data.invoices.filter(i => !baseIds.has(i.id));
-      localStorage.setItem('autoanalytica_invoices', JSON.stringify(data.invoices));
+      // Сохраняем только не-базовые счета, чтобы избежать дублирования при loadFromStorage
+      localStorage.setItem('autoanalytica_invoices', JSON.stringify(extra));
 
       // Restore deleted list
       if (data.deleted && data.deleted.length > 0) {
