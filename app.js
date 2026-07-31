@@ -845,7 +845,7 @@ function showInvoice(id) {
   document.getElementById('modalBody').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px">
       <div class="stat-card" style="padding:14px"><div class="stat-icon" style="font-size:20px">🏢</div><div class="stat-info"><div class="stat-value" style="font-size:15px">${inv.service}</div><div class="stat-label">Сервис</div></div></div>
-      <div class="stat-card" style="padding:14px"><div class="stat-icon" style="font-size:20px">🚛</div><div class="stat-info"><div class="stat-value" style="font-size:15px">${inv.vehicle}</div><div class="stat-label">${inv.vehicleModel || 'Автомобиль'}</div></div></div>
+      <div class="stat-card" style="padding:14px"><div class="stat-icon" style="font-size:20px">🚛</div><div class="stat-info"><div class="stat-value" style="font-size:15px">${inv.vehicle || '—'}</div><div class="stat-label">${inv.vehicleModel || 'Автомобиль'}</div></div></div>
       <div class="stat-card" style="padding:14px"><div class="stat-icon" style="font-size:20px">💰</div><div class="stat-info"><div class="stat-value" style="font-size:15px">${fmtMoney(inv.totalAmount)}</div><div class="stat-label">Итого</div></div></div>
       <div class="stat-card ${overpay > 10 ? 'warning' : 'success'}" style="padding:14px"><div class="stat-icon" style="font-size:20px">${overpay > 10 ? '📈' : '✅'}</div><div class="stat-info"><div class="stat-value" style="font-size:15px">${overpay > 0 ? '+' : ''}${overpay.toFixed(0)}%</div><div class="stat-label">К рынку</div></div></div>
     </div>
@@ -854,7 +854,7 @@ function showInvoice(id) {
     <table class="data-table" style="margin-bottom:20px">
       <thead><tr><th>Артикул</th><th>Наименование</th><th>Бренд</th><th>Кол-во</th><th>Цена</th><th>Сумма</th><th>Рын. цена</th><th>Разница</th></tr></thead>
       <tbody>
-        ${inv.parts.map(p => {
+        ${(inv.parts || []).map(p => {
           const mp = findMarketPriceForPart(p);
           const diff = mp ? ((p.price - mp) / mp * 100) : null;
           const cls = diff !== null ? (diff > 20 ? 'diff-positive' : diff < -5 ? 'diff-negative' : '') : '';
@@ -876,7 +876,7 @@ function showInvoice(id) {
     <table class="data-table">
       <thead><tr><th>Наименование работы</th><th>Норм-ч (факт)</th><th>Норм-ч (норм.)</th><th>Ставка</th><th>Сумма</th><th>Статус</th></tr></thead>
       <tbody>
-        ${inv.works.map(w => {
+        ${(inv.works || []).map(w => {
           const norm = findNormHours(w.name);
           const exceeded = norm && w.normHours > norm.norm * 1.3;
           return `<tr>
@@ -996,7 +996,7 @@ function downloadInvoicePDF(id) {
             </tr>
           </thead>
           <tbody>
-            ${inv.parts.map(p => {
+            ${(inv.parts || []).map(p => {
               const mp = findMarketPriceForPart(p);
               const diff = mp ? ((p.price - mp) / mp * 100) : null;
               const diffColor = diff !== null && diff > 20 ? '#ef4444' : diff !== null && diff < -5 ? '#22c55e' : '#6b7280';
@@ -1028,7 +1028,7 @@ function downloadInvoicePDF(id) {
             </tr>
           </thead>
           <tbody>
-            ${inv.works.map(w => {
+            ${(inv.works || []).map(w => {
               const norm = findNormHours(w.name);
               const exceeded = norm && w.normHours > norm.norm * 1.3;
               return `
